@@ -1,19 +1,25 @@
 # transport-seam-repro
 
-Some networks only allow outbound connections through an HTTP proxy, so reaching a broker means
-establishing a CONNECT tunnel before AMQP starts. The RabbitMQ AMQP 1.0 .NET client cannot be handed
-a socket, a stream or a transport, so the only way through is a local forwarder, and the client then
-has to be pointed at `127.0.0.1` instead of at the broker. With `amqps` that makes the TLS handshake
-validate the broker certificate against the loopback address: usually a clean
-`RemoteCertificateNameMismatch`, but if the certificate happens to list `127.0.0.1` among its
-subject alternative names the connection comes up green having verified nothing at all about the
-broker's identity.
+Some networks only allow outbound connections through an HTTP proxy. Reaching a RabbitMQ broker
+from such a network means asking the proxy for a tunnel (HTTP `CONNECT`) first, and starting AMQP
+inside it. The RabbitMQ AMQP 1.0 .NET client has no way to accept such a tunnel — it cannot be
+handed a socket, a stream, or a transport.
 
-This repository reproduces all of that in three commands, and then shows the same broker reached
-correctly through the same proxy using `ConnectionSettings.TransportFactory`.
+The only workaround today is a small local forwarder that owns the tunnel, with the client pointed
+at `127.0.0.1` instead of at the broker. With `amqps`, TLS then validates the broker certificate
+against the forwarder's loopback address — and this repository shows, with real captured output,
+the two ways that goes wrong and the fix:
 
-- The transport factory: [rabbitmq/rabbitmq-amqp-dotnet-client#180](https://github.com/rabbitmq/rabbitmq-amqp-dotnet-client/pull/180)
-- The false green: [rabbitmq/rabbitmq-amqp-dotnet-client#181](https://github.com/rabbitmq/rabbitmq-amqp-dotnet-client/issues/181)
+| | Broker certificate | Outcome |
+|---|---|---|
+| **Demo 1** | does not list `127.0.0.1` | Honest failure: `RemoteCertificateNameMismatch`. TLS checked the loopback address, not the broker's name. |
+| **Demo 2** | happens to list `IP Address:127.0.0.1` | **False green**: the connection comes up with strict validation on — having verified nothing about the broker's identity. This is [#181](https://github.com/rabbitmq/rabbitmq-amqp-dotnet-client/issues/181). |
+| **Demo 3** | does not list `127.0.0.1` | **The fix** ([PR #180](https://github.com/rabbitmq/rabbitmq-amqp-dotnet-client/pull/180)): the application supplies the tunnel through `ConnectionSettings.TransportFactory`, the library runs TLS against the broker's real name `broker-a`, and a message round trip succeeds. |
+
+Each demonstration is one `docker compose up -d` plus one `dotnet run`. The core of the fix in one
+sentence: **the application produces the byte stream; TLS, SASL and the AMQP open stay inside the
+library, and the certificate is checked against `ConnectionSettings.Host` — the broker's name —
+instead of whatever address the application had to dial.**
 
 ## The lab
 

@@ -1,0 +1,4 @@
+# Normalize text in the repository, and keep the shell script LF so that it runs after a
+# clone on any platform.
+* text=auto
+*.sh text eol=lf

@@ -1,0 +1,6 @@
+bin/
+obj/
+
+# Lab keys and certificates, produced by ./generate-certs.sh. Throw-away by design, and
+# never something to commit.
+certs/

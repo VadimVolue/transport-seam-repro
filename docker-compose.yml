@@ -1,0 +1,61 @@
+name: transport-seam-repro
+
+# A broker that can only be reached through an HTTP proxy, which is the situation the
+# transport seam exists for. The broker publishes no plaintext AMQP listener at all, and
+# the proxy will only open a CONNECT tunnel to the broker's TLS port.
+#
+# Two environment variables steer the lab:
+#
+#   BROKER_CERT_VARIANT   normal (default) | san-loopback
+#                         which broker certificate to mount; see ./generate-certs.sh
+#   PROXY_PORT            host port for the proxy, 3128 by default
+#
+# BROKER_TLS_PORT and MANAGEMENT_PORT only move the host side of two published ports, so
+# the lab can run next to something already holding 5671 or 15672.
+
+services:
+  broker:
+    image: rabbitmq:4.3-management
+    container_name: transport-seam-repro-broker
+    hostname: broker-a
+    volumes:
+      - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./certs/ca/ca-cert.pem:/etc/rabbitmq/certs/ca-cert.pem:ro
+      - ./certs/${BROKER_CERT_VARIANT:-normal}/broker-cert.pem:/etc/rabbitmq/certs/broker-cert.pem:ro
+      - ./certs/${BROKER_CERT_VARIANT:-normal}/broker-key.pem:/etc/rabbitmq/certs/broker-key.pem:ro
+    ports:
+      # Neither demonstration uses these. They are published so that the certificate can be
+      # inspected from the host (openssl s_client -connect localhost:5671) and so that the
+      # management UI is reachable at http://localhost:15672 (guest / guest).
+      - "${BROKER_TLS_PORT:-5671}:5671"
+      - "${MANAGEMENT_PORT:-15672}:15672"
+    networks:
+      lab:
+        aliases:
+          # broker-b resolves to the same broker. It exists so that a certificate naming
+          # broker-b can be pointed at a connection configured for broker-a, and vice versa.
+          - broker-a
+          - broker-b
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
+      interval: 5s
+      timeout: 10s
+      retries: 24
+      start_period: 10s
+
+  proxy:
+    image: ubuntu/squid:latest
+    container_name: transport-seam-repro-proxy
+    depends_on:
+      broker:
+        condition: service_healthy
+    volumes:
+      - ./squid/squid.conf:/etc/squid/squid.conf:ro
+    ports:
+      - "${PROXY_PORT:-3128}:3128"
+    networks:
+      - lab
+
+networks:
+  lab:
+    name: transport-seam-repro

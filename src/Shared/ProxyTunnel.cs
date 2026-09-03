@@ -27,16 +27,16 @@ namespace TransportSeamRepro
             var tcpClient = new TcpClient();
             try
             {
-                await tcpClient.ConnectAsync(proxyHost, proxyPort);
+                await tcpClient.ConnectAsync(proxyHost, proxyPort, cancellationToken);
 
                 // TcpClient.GetStream() hands the socket to the stream, so disposing the stream
                 // closes the tunnel.
                 NetworkStream stream = tcpClient.GetStream();
 
-                string request =
-                    $"CONNECT {targetHost}:{targetPort} HTTP/1.1\r\n" +
-                    $"Host: {targetHost}:{targetPort}\r\n" +
-                    "\r\n";
+                // Invariant: the port goes into an HTTP request line, which is a wire protocol and
+                // not something to render in the ambient culture's digits.
+                string request = FormattableString.Invariant(
+                    $"CONNECT {targetHost}:{targetPort} HTTP/1.1\r\nHost: {targetHost}:{targetPort}\r\n\r\n");
                 byte[] requestBytes = Encoding.ASCII.GetBytes(request);
                 await stream.WriteAsync(requestBytes, 0, requestBytes.Length, cancellationToken);
                 await stream.FlushAsync(cancellationToken);

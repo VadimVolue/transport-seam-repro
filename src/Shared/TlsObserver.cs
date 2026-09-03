@@ -20,6 +20,9 @@ namespace TransportSeamRepro
     {
         private const string SubjectAlternativeNameOid = "2.5.29.17";
 
+        /// <summary>
+        /// Borrowed, not owned: the caller that loaded it disposes it.
+        /// </summary>
         private readonly X509Certificate2 _certificateAuthority;
 
         private SslPolicyErrors _observedPolicyErrors;

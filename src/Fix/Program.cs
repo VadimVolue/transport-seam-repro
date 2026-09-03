@@ -45,6 +45,9 @@ namespace TransportSeamRepro.Fix
                     {
                         Interlocked.Increment(ref transportFactoryInvocations);
                         Output.Log("factory", $"asked for a transport to {host}:{port}");
+
+                        // The library's token for this attempt, carried through to the dial and the
+                        // CONNECT exchange, so a cancelled attempt does not leave one in flight.
                         return ProxyTunnel.OpenAsync(lab.ProxyHost, lab.ProxyPort, host, port,
                             cancellationToken);
                     })

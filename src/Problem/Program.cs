@@ -37,17 +37,19 @@ namespace TransportSeamRepro.Problem
             {
                 PrintBanner(lab, labCertificateAuthority);
 
-                var forwarder = new LoopbackForwarder(lab);
-                forwarder.Start(cancellation.Token);
+                using (var forwarder = new LoopbackForwarder(lab))
+                {
+                    forwarder.Start(cancellation.Token);
 
-                var observer = new TlsObserver(labCertificateAuthority);
-                try
-                {
-                    return await ConnectAndReportAsync(lab, forwarder, observer);
-                }
-                finally
-                {
-                    cancellation.Cancel();
+                    var observer = new TlsObserver(labCertificateAuthority);
+                    try
+                    {
+                        return await ConnectAndReportAsync(lab, forwarder, observer);
+                    }
+                    finally
+                    {
+                        cancellation.Cancel();
+                    }
                 }
             }
         }
@@ -186,7 +188,7 @@ namespace TransportSeamRepro.Problem
     /// every accepted connection and copies bytes both ways. It is the only reason the client has an
     /// address it can be given, and the reason that address is not the broker's.
     /// </summary>
-    internal sealed class LoopbackForwarder
+    internal sealed class LoopbackForwarder : IDisposable
     {
         private readonly LabSettings _lab;
         private readonly TcpListener _listener;
@@ -206,24 +208,25 @@ namespace TransportSeamRepro.Problem
             _ = AcceptLoopAsync(cancellationToken);
         }
 
+        public void Dispose()
+        {
+            _listener.Dispose();
+        }
+
         private async Task AcceptLoopAsync(CancellationToken cancellationToken)
         {
             try
             {
                 while (!cancellationToken.IsCancellationRequested)
                 {
-                    TcpClient inbound = await _listener.AcceptTcpClientAsync();
+                    TcpClient inbound = await _listener.AcceptTcpClientAsync(cancellationToken);
                     _ = TunnelAsync(inbound, cancellationToken);
                 }
             }
-            catch (Exception exception)
-                when (exception is ObjectDisposedException || exception is SocketException)
+            catch (Exception exception) when (exception is OperationCanceledException
+                || exception is ObjectDisposedException || exception is SocketException)
             {
-                // The listener was stopped once the demonstration finished.
-            }
-            finally
-            {
-                _listener.Stop();
+                // The demonstration finished and the listener was shut down under us.
             }
         }
 
